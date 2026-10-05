@@ -3,21 +3,29 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Note App</title>
-    <link rel="stylesheet" href="style.css">
-    <script src="https://unpkg.com/dexie/dist/dexie.js"></script>
+    <title>Notes</title>
+    <link rel="stylesheet" href="css/base.css">
+    <link rel="stylesheet" href="css/outline.css">
+    <link rel="stylesheet" href="css/editor.css">
+    <link rel="stylesheet" href="css/flashcard.css">
 </head>
 <body>
     <h1>Notes</h1>
     <ul id="outline"></ul>
     <div id="hint">
-        <kbd>Enter</kbd> new line · 
-        <kbd>Tab</kbd> indent · 
-        <kbd>Shift</kbd>+<kbd>Tab</kbd> outdent · 
-        <kbd>Backspace</kbd> on empty line to delete
+        <kbd>Enter</kbd> new line ·
+        <kbd>Tab</kbd> indent ·
+        <kbd>Shift</kbd>+<kbd>Tab</kbd> outdent ·
+        <kbd>Backspace</kbd> on empty line to delete ·
+        type <kbd>==</kbd> to make a flashcard
     </div>
+
     <script src="https://unpkg.com/dexie/dist/dexie.js"></script>
-    <script src="db.js"></script>
-    <script src="app.js"></script>
+    <script src="js/db.js"></script>
+    <script src="js/parsing.js"></script>
+    <script src="js/notes.js"></script>
+    <script src="js/editor.js"></script>
+    <script src="js/outline.js"></script>
+    <script src="js/main.js"></script>
 </body>
 </html>

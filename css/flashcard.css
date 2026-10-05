@@ -1,0 +1,45 @@
+.flash-arrow {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 26px;
+    height: 20px;
+    margin: 0 6px;
+    padding: 0 4px;
+    border: 1.5px solid #3b82f6;
+    border-radius: 4px;
+    background: #eff6ff;
+    color: #3b82f6;
+    font-size: 12px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.flash-arrow:hover { background: #dbeafe; }
+
+.flash-menu {
+    position: fixed;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+    padding: 4px;
+    z-index: 1000;
+    min-width: 180px;
+}
+
+.flash-menu button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 8px 12px;
+    border: none;
+    background: transparent;
+    font: inherit;
+    font-size: 14px;
+    cursor: pointer;
+    border-radius: 4px;
+}
+
+.flash-menu button:hover { background: #f3f4f6; }
+.flash-menu button.active { background: #dbeafe; color: #1e40af; font-weight: 600; }

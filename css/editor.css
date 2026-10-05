@@ -1,0 +1,33 @@
+.note-editor {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    padding: 2px 4px;
+    border-radius: 3px;
+    cursor: text;
+    min-height: 22px;
+    font: inherit;
+}
+
+.note-editor:focus-within {
+    background: #fff;
+    box-shadow: 0 0 0 1px #ddd;
+}
+
+.part {
+    outline: none;
+    border: none;
+    background: transparent;
+    font: inherit;
+    padding: 0;
+    color: inherit;
+    min-width: 4px;
+    white-space: pre-wrap;
+}
+
+.part:empty::before {
+    content: attr(data-placeholder);
+    color: #bbb;
+    pointer-events: none;
+}

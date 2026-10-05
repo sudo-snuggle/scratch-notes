@@ -1,0 +1,49 @@
+#outline {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.line {
+    display: flex;
+    align-items: flex-start;
+    padding: 2px 0;
+    position: relative;
+}
+
+.bullet {
+    width: 20px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: grab;
+    user-select: none;
+    color: #999;
+    font-size: 14px;
+    flex-shrink: 0;
+}
+
+.bullet:hover { color: #333; }
+
+.line.empty .bullet { color: #ccc; }
+
+.line.dragging { opacity: 0.4; }
+
+.line.drop-before::before,
+.line.drop-after::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: #3b82f6;
+    pointer-events: none;
+}
+.line.drop-before::before { top: 0; }
+.line.drop-after::after { bottom: 0; }
+
+.line.drop-into > .note-editor {
+    background: #dbeafe;
+    box-shadow: 0 0 0 1px #3b82f6;
+}
