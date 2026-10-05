@@ -1,119 +1,179 @@
-const db = new Dexie('MyNotesDB');
-db.version(1).stores({
-    notes: 'id, parentId, updatedAt'
-});
+let flatNotes = [];
+const noteEls = new Map(); // id -> input element
 
-// Track which notes are expanded (in memory for now)
-const expanded = new Set();
+async function render() {
+    flatNotes = await getFlatNotes();
+    const outline = document.getElementById('outline');
+    outline.innerHTML = '';
+    noteEls.clear();
 
-// Load all notes into a map for fast lookup
-async function getAllNotes() {
-    const notes = await db.notes.toArray();
-    const map = new Map();
-    notes.forEach(n => map.set(n.id, { ...n, children: [] }));
-    return map;
+    for (const note of flatNotes) {
+        const li = document.createElement('li');
+        li.className = 'line';
+        li.style.paddingLeft = `${note.depth * 24}px`;
+        li.dataset.id = note.id;
+
+        const bullet = document.createElement('span');
+        bullet.className = 'bullet';
+        bullet.textContent = '•';
+        bullet.draggable = true;
+
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.value = note.content;
+        input.placeholder = note.depth === 0 ? 'Type a note…' : '';
+        input.dataset.id = note.id;
+
+        if (!note.content) li.classList.add('empty');
+
+        input.addEventListener('input', () => {
+            note.content = input.value;
+            li.classList.toggle('empty', !input.value);
+        });
+        input.addEventListener('blur', async () => {
+            await db.notes.update(note.id, { content: input.value, updatedAt: Date.now() });
+        });
+        input.addEventListener('keydown', (e) => handleKey(e, note, input));
+
+        noteEls.set(note.id, input);
+        li.append(bullet, input);
+        outline.appendChild(li);
+    }
+
+    // Add a trailing empty line if the last note has content
+    const last = flatNotes[flatNotes.length - 1];
+    if (!last || last.content.trim() !== '') {
+        const li = document.createElement('li');
+        li.className = 'line empty';
+        li.style.paddingLeft = '0px';
+        const bullet = document.createElement('span');
+        bullet.className = 'bullet';
+        bullet.textContent = '•';
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.placeholder = flatNotes.length === 0 ? 'Type your first note…' : 'Type a note…';
+        input.addEventListener('keydown', (e) => handleTrailingKey(e, input));
+        input.addEventListener('blur', async () => {
+            if (input.value.trim()) {
+                await createNote({ content: input.value, parentId: null, afterId: last?.id });
+                await render();
+            }
+        });
+        li.append(bullet, input);
+        outline.appendChild(li);
+    }
 }
 
-// Build the tree from flat records
-function buildTree(map) {
-    const roots = [];
-    for (const note of map.values()) {
-        if (note.parentId && map.has(note.parentId)) {
-            map.get(note.parentId).children.push(note);
+async function handleKey(e, note, input) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        await db.notes.update(note.id, { content: input.value, updatedAt: Date.now() });
+        const fresh = await db.notes.get(note.id);
+        const newNote = await createNote({
+            content: '',
+            parentId: fresh.parentId || null,
+            afterId: note.id
+        });
+        await render();
+        noteEls.get(newNote.id)?.focus();
+    }
+
+    if (e.key === 'Tab') {
+        e.preventDefault();
+        await db.notes.update(note.id, { content: input.value, updatedAt: Date.now() });
+        if (e.shiftKey) {
+            await outdent(note.id);
         } else {
-            roots.push(note);
+            await indent(note.id);
+        }
+        await render();
+        noteEls.get(note.id)?.focus();
+    }
+
+    if (e.key === 'Backspace' && input.value === '') {
+        e.preventDefault();
+        await deleteNote(note.id);
+    }
+
+    if (e.key === 'ArrowUp') {
+        const idx = flatNotes.findIndex(n => n.id === note.id);
+        if (idx > 0) { e.preventDefault(); noteEls.get(flatNotes[idx - 1].id)?.focus(); }
+    }
+    if (e.key === 'ArrowDown') {
+        const idx = flatNotes.findIndex(n => n.id === note.id);
+        if (idx < flatNotes.length - 1) { e.preventDefault(); noteEls.get(flatNotes[idx + 1].id)?.focus(); }
+    }
+}
+
+async function handleTrailingKey(e, input) {
+    if (e.key === 'Enter' && input.value.trim()) {
+        e.preventDefault();
+        const last = flatNotes[flatNotes.length - 1];
+        const newNote = await createNote({
+            content: input.value,
+            parentId: null,
+            afterId: last?.id
+        });
+        await render();
+        noteEls.get(newNote.id)?.focus();
+    }
+}
+
+async function indent(noteId) {
+    const flat = await getFlatNotes();
+    const idx = flat.findIndex(n => n.id === noteId);
+    if (idx <= 0) return;
+    const prev = flat[idx - 1];
+    const note = await db.notes.get(noteId);
+    // New parent is the previous note at the same or shallower depth
+    const siblings = await db.notes.where('parentId').equals(prev.id).toArray();
+    const maxOrder = siblings.reduce((m, s) => Math.max(m, s.order || 0), 0);
+    await db.notes.update(noteId, {
+        parentId: prev.id,
+        order: maxOrder + 1000,
+        updatedAt: Date.now()
+    });
+}
+
+async function outdent(noteId) {
+    const note = await db.notes.get(noteId);
+    if (!note.parentId) return; // already top-level
+    const parent = await db.notes.get(note.parentId);
+    if (!parent) return;
+    // Become sibling of parent, right after parent
+    const siblings = await db.notes
+        .where('parentId').equals(parent.parentId || 'ROOT')
+        .toArray();
+    const realSiblings = (await db.notes.toArray()).filter(
+        s => (s.parentId || null) === (parent.parentId || null)
+    );
+    const sorted = realSiblings.sort((a, b) => (a.order || 0) - (b.order || 0));
+    const pIdx = sorted.findIndex(s => s.id === parent.id);
+    const next = sorted[pIdx + 1];
+    const order = next ? ((parent.order || 0) + (next.order || 0)) / 2 : (parent.order || 0) + 1000;
+    await db.notes.update(noteId, {
+        parentId: parent.parentId || null,
+        order,
+        updatedAt: Date.now()
+    });
+}
+
+async function deleteNote(noteId) {
+    // Delete note and all descendants
+    const all = await db.notes.toArray();
+    const toDelete = new Set([noteId]);
+    let changed = true;
+    while (changed) {
+        changed = false;
+        for (const n of all) {
+            if (n.parentId && toDelete.has(n.parentId) && !toDelete.has(n.id)) {
+                toDelete.add(n.id);
+                changed = true;
+            }
         }
     }
-    // Sort children by creation order
-    const sortRec = (nodes) => {
-        nodes.sort((a, b) => a.updatedAt - b.updatedAt);
-        nodes.forEach(n => sortRec(n.children));
-    };
-    sortRec(roots);
-    return roots;
+    await db.notes.bulkDelete([...toDelete]);
+    await render();
 }
 
-// Recursively render a note and its children
-function renderNote(note, container, depth = 0) {
-    const li = document.createElement('li');
-    li.style.marginLeft = `${depth * 20}px`;
-
-    const row = document.createElement('div');
-    row.className = 'note-row';
-
-    // Expand/collapse arrow if it has children
-    const arrow = document.createElement('span');
-    arrow.className = 'arrow';
-    arrow.textContent = note.children.length > 0
-        ? (expanded.has(note.id) ? '▼' : '▶')
-        : '•';
-    if (note.children.length > 0) {
-        arrow.onclick = () => {
-            if (expanded.has(note.id)) expanded.delete(note.id);
-            else expanded.add(note.id);
-            render();
-        };
-    }
-
-    // The note content
-    const text = document.createElement('span');
-    text.className = 'note-text';
-    text.textContent = note.content || 'Untitled';
-
-    // Add child button
-    const addBtn = document.createElement('button');
-    addBtn.textContent = '+';
-    addBtn.className = 'add-child';
-    addBtn.onclick = () => addChild(note.id);
-
-    row.append(arrow, text, addBtn);
-    li.appendChild(row);
-
-    // Render children if expanded
-    if (expanded.has(note.id) && note.children.length > 0) {
-        const childList = document.createElement('ul');
-        note.children.forEach(child => renderNote(child, childList, depth + 1));
-        li.appendChild(childList);
-    }
-
-    container.appendChild(li);
-}
-
-// Main render
-async function render() {
-    const map = await getAllNotes();
-    const roots = buildTree(map);
-    const list = document.getElementById('notesList');
-    list.innerHTML = '';
-    roots.forEach(note => renderNote(note, list));
-}
-
-// Add a top-level note
-async function addNote() {
-    const content = prompt('Note content:');
-    if (!content) return;
-    await db.notes.put({
-        id: crypto.randomUUID(),
-        content,
-        parentId: null,
-        updatedAt: Date.now()
-    });
-    render();
-}
-
-// Add a child to a specific note
-async function addChild(parentId) {
-    const content = prompt('Child note content:');
-    if (!content) return;
-    await db.notes.put({
-        id: crypto.randomUUID(),
-        content,
-        parentId,
-        updatedAt: Date.now()
-    });
-    expanded.add(parentId); // auto-expand so you see the new child
-    render();
-}
-
-document.getElementById('addNoteBtn').addEventListener('click', addNote);
 render();
