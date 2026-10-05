@@ -9,8 +9,13 @@
     align-items: flex-start;
     padding: 2px 0;
     position: relative;
+    min-height: 26px;
+    cursor: text;
 }
 
+.line > .note-editor {
+    flex: 1;
+}
 .bullet {
     width: 20px;
     height: 22px;

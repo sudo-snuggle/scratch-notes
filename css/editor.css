@@ -8,6 +8,7 @@
     cursor: text;
     min-height: 22px;
     font: inherit;
+    min-width: 0;
 }
 
 .note-editor:focus-within {
@@ -22,8 +23,9 @@
     font: inherit;
     padding: 0;
     color: inherit;
-    min-width: 4px;
+    min-width: 1px;
     white-space: pre-wrap;
+    flex: 1 1 auto;
 }
 
 .part:empty::before {
