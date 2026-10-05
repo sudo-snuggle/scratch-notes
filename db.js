@@ -3,6 +3,7 @@ db.version(2).stores({
     notes: 'id, parentId, order, updatedAt'
 });
 
+
 // Get all notes sorted for flat rendering (children right after parent)
 async function getFlatNotes() {
     const all = await db.notes.toArray();
@@ -111,4 +112,32 @@ async function moveNote(dragId, targetId, position) {
         order: newOrder,
         updatedAt: Date.now()
     });
+}
+
+// Split "front == back" into parts. Returns null if no == present.
+function parseFlashcard(content) {
+    const idx = content.indexOf('==');
+    if (idx === -1) return null;
+    return {
+        front: content.slice(0, idx).trim(),
+        back: content.slice(idx + 2).trim()
+    };
+}
+
+
+async function saveNoteContent(noteId, content) {
+    const parsed = parseFlashcard(content);
+    const update = { content, updatedAt: Date.now() };
+    if (parsed) {
+        update.flashcardFront = parsed.front;
+        update.flashcardBack = parsed.back;
+        // Keep existing direction if there was one
+        const existing = await db.notes.get(noteId);
+        if (!existing.flashcardDirection) update.flashcardDirection = 'forward';
+    } else {
+        update.flashcardFront = null;
+        update.flashcardBack = null;
+        update.flashcardDirection = null;
+    }
+    await db.notes.update(noteId, update);
 }
