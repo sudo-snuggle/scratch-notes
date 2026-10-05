@@ -1,5 +1,6 @@
 let flatNotes = [];
-const noteEls = new Map(); // id -> input element
+let draggedId = null;
+const noteEls = new Map();
 
 async function render() {
     flatNotes = await getFlatNotes();
@@ -18,12 +19,49 @@ async function render() {
         bullet.textContent = '•';
         bullet.draggable = true;
 
+        bullet.addEventListener('dragstart', (e) => {
+            draggedId = note.id;
+            li.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', note.id);
+        });
+        bullet.addEventListener('dragend', () => {
+            draggedId = null;
+            document.querySelectorAll('.line').forEach(el => {
+                el.classList.remove('dragging', 'drop-before', 'drop-after', 'drop-into');
+            });
+        });
+
+        li.addEventListener('dragover', (e) => {
+            if (!draggedId || draggedId === note.id) return;
+            e.preventDefault();
+            const rect = li.getBoundingClientRect();
+            const y = e.clientY - rect.top;
+            const h = rect.height;
+            li.classList.remove('drop-before', 'drop-after', 'drop-into');
+            if (y < h * 0.25) li.classList.add('drop-before');
+            else if (y > h * 0.75) li.classList.add('drop-after');
+            else li.classList.add('drop-into');
+        });
+        li.addEventListener('dragleave', () => {
+            li.classList.remove('drop-before', 'drop-after', 'drop-into');
+        });
+        li.addEventListener('drop', async (e) => {
+            e.preventDefault();
+            if (!draggedId || draggedId === note.id) return;
+            const position = li.classList.contains('drop-before') ? 'before'
+                : li.classList.contains('drop-after') ? 'after'
+                : 'into';
+            await moveNote(draggedId, note.id, position);
+            draggedId = null;
+            await render();
+        });
+
         const input = document.createElement('input');
         input.type = 'text';
         input.value = note.content;
         input.placeholder = note.depth === 0 ? 'Type a note…' : '';
         input.dataset.id = note.id;
-
         if (!note.content) li.classList.add('empty');
 
         input.addEventListener('input', () => {
@@ -40,12 +78,10 @@ async function render() {
         outline.appendChild(li);
     }
 
-    // Add a trailing empty line if the last note has content
     const last = flatNotes[flatNotes.length - 1];
     if (!last || last.content.trim() !== '') {
         const li = document.createElement('li');
         li.className = 'line empty';
-        li.style.paddingLeft = '0px';
         const bullet = document.createElement('span');
         bullet.className = 'bullet';
         bullet.textContent = '•';
@@ -124,8 +160,6 @@ async function indent(noteId) {
     const idx = flat.findIndex(n => n.id === noteId);
     if (idx <= 0) return;
     const prev = flat[idx - 1];
-    const note = await db.notes.get(noteId);
-    // New parent is the previous note at the same or shallower depth
     const siblings = await db.notes.where('parentId').equals(prev.id).toArray();
     const maxOrder = siblings.reduce((m, s) => Math.max(m, s.order || 0), 0);
     await db.notes.update(noteId, {
@@ -137,13 +171,9 @@ async function indent(noteId) {
 
 async function outdent(noteId) {
     const note = await db.notes.get(noteId);
-    if (!note.parentId) return; // already top-level
+    if (!note.parentId) return;
     const parent = await db.notes.get(note.parentId);
     if (!parent) return;
-    // Become sibling of parent, right after parent
-    const siblings = await db.notes
-        .where('parentId').equals(parent.parentId || 'ROOT')
-        .toArray();
     const realSiblings = (await db.notes.toArray()).filter(
         s => (s.parentId || null) === (parent.parentId || null)
     );
@@ -159,7 +189,6 @@ async function outdent(noteId) {
 }
 
 async function deleteNote(noteId) {
-    // Delete note and all descendants
     const all = await db.notes.toArray();
     const toDelete = new Set([noteId]);
     let changed = true;
@@ -176,108 +205,4 @@ async function deleteNote(noteId) {
     await render();
 }
 
-let flatNotes = [];
-let draggedId = null;
-const noteEls = new Map();
-
-async function render() {
-    flatNotes = await getFlatNotes();
-    const outline = document.getElementById('outline');
-    outline.innerHTML = '';
-    noteEls.clear();
-
-    for (const note of flatNotes) {
-        const li = document.createElement('li');
-        li.className = 'line';
-        li.style.paddingLeft = `${note.depth * 24}px`;
-        li.dataset.id = note.id;
-
-        const bullet = document.createElement('span');
-        bullet.className = 'bullet';
-        bullet.textContent = '•';
-        bullet.draggable = true;
-
-        // ---- DRAG HANDLERS ----
-        bullet.addEventListener('dragstart', (e) => {
-            draggedId = note.id;
-            li.classList.add('dragging');
-            e.dataTransfer.effectAllowed = 'move';
-            // Firefox requires data to be set for drag to start
-            e.dataTransfer.setData('text/plain', note.id);
-        });
-        bullet.addEventListener('dragend', () => {
-            draggedId = null;
-            document.querySelectorAll('.line').forEach(el => {
-                el.classList.remove('dragging', 'drop-before', 'drop-after', 'drop-into');
-            });
-        });
-
-        li.addEventListener('dragover', (e) => {
-            if (!draggedId || draggedId === note.id) return;
-            e.preventDefault();
-            const rect = li.getBoundingClientRect();
-            const y = e.clientY - rect.top;
-            const h = rect.height;
-            li.classList.remove('drop-before', 'drop-after', 'drop-into');
-            if (y < h * 0.25) li.classList.add('drop-before');
-            else if (y > h * 0.75) li.classList.add('drop-after');
-            else li.classList.add('drop-into');
-        });
-        li.addEventListener('dragleave', () => {
-            li.classList.remove('drop-before', 'drop-after', 'drop-into');
-        });
-        li.addEventListener('drop', async (e) => {
-            e.preventDefault();
-            if (!draggedId || draggedId === note.id) return;
-            const position = li.classList.contains('drop-before') ? 'before'
-                : li.classList.contains('drop-after') ? 'after'
-                : 'into';
-            await moveNote(draggedId, note.id, position);
-            draggedId = null;
-            await render();
-        });
-        // ---- END DRAG HANDLERS ----
-
-        const input = document.createElement('input');
-        input.type = 'text';
-        input.value = note.content;
-        input.placeholder = note.depth === 0 ? 'Type a note…' : '';
-        input.dataset.id = note.id;
-        if (!note.content) li.classList.add('empty');
-
-        input.addEventListener('input', () => {
-            note.content = input.value;
-            li.classList.toggle('empty', !input.value);
-        });
-        input.addEventListener('blur', async () => {
-            await db.notes.update(note.id, { content: input.value, updatedAt: Date.now() });
-        });
-        input.addEventListener('keydown', (e) => handleKey(e, note, input));
-
-        noteEls.set(note.id, input);
-        li.append(bullet, input);
-        outline.appendChild(li);
-    }
-
-    // trailing line
-    const last = flatNotes[flatNotes.length - 1];
-    if (!last || last.content.trim() !== '') {
-        const li = document.createElement('li');
-        li.className = 'line empty';
-        const bullet = document.createElement('span');
-        bullet.className = 'bullet';
-        bullet.textContent = '•';
-        const input = document.createElement('input');
-        input.type = 'text';
-        input.placeholder = flatNotes.length === 0 ? 'Type your first note…' : 'Type a note…';
-        input.addEventListener('keydown', (e) => handleTrailingKey(e, input));
-        input.addEventListener('blur', async () => {
-            if (input.value.trim()) {
-                await createNote({ content: input.value, parentId: null, afterId: last?.id });
-                await render();
-            }
-        });
-        li.append(bullet, input);
-        outline.appendChild(li);
-    }
-}
+render();
