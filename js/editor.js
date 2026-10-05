@@ -130,17 +130,15 @@ function collectContent(editor) {
 }
 
 function onEditorKeydown(e, editor, note, li) {
-    // Detect backspace when the last visible char is one of the '='s
+    const isTrailing = note.id === '__trailing__';
+
+    // Backspace handling (works for both real and trailing)
     if (e.key === 'Backspace') {
         const front = editor.querySelector('[data-role="front"]');
         const back = editor.querySelector('[data-role="back"]');
         if (front && back) {
-            const frontText = front.textContent;
-            // If back is empty and user presses backspace in front
-            // near the ==, unwind the flashcard.
             const active = document.activeElement;
             if (active === back && back.textContent === '') {
-                // Merge: delete arrow and back, restore == to front
                 e.preventDefault();
                 const arrow = editor.querySelector('[data-role="arrow"]');
                 const newText = front.textContent + ' ==';
@@ -150,12 +148,12 @@ function onEditorKeydown(e, editor, note, li) {
                 front.focus();
                 setCaretPosition(front, newText.length);
                 note.content = newText;
+                if (!isTrailing) saveNoteContent(note.id, newText);
                 return;
             }
         }
-        // If a plain full span is empty, delete the note
         const full = editor.querySelector('[data-role="full"]');
-        if (full && full.textContent === '' && document.activeElement === full) {
+        if (full && full.textContent === '' && document.activeElement === full && !isTrailing) {
             e.preventDefault();
             deleteNote(note.id);
             return;
@@ -164,8 +162,13 @@ function onEditorKeydown(e, editor, note, li) {
 
     if (e.key === 'Enter') {
         e.preventDefault();
+        if (isTrailing) {
+            promoteTrailing(editor);
+            return;
+        }
         commitEditor(editor, note, li).then(async () => {
             const fresh = await db.notes.get(note.id);
+            if (!fresh) return;
             const newNote = await createNote({
                 content: '',
                 parentId: fresh.parentId || null,
@@ -179,6 +182,7 @@ function onEditorKeydown(e, editor, note, li) {
 
     if (e.key === 'Tab') {
         e.preventDefault();
+        if (isTrailing) return; // can't indent the trailing line
         commitEditor(editor, note, li).then(async () => {
             if (e.shiftKey) await outdent(note.id);
             else await indent(note.id);
@@ -187,6 +191,15 @@ function onEditorKeydown(e, editor, note, li) {
         });
         return;
     }
+}
+
+async function promoteTrailing(editor) {
+    const content = collectContent(editor).trim();
+    if (!content) return;
+    const all = await getFlatNotes();
+    const lastId = all.length ? all[all.length - 1].id : null;
+    await createNote({ content, parentId: null, afterId: lastId });
+    await render();
 }
 
 async function commitEditor(editor, note, li) {
@@ -276,4 +289,14 @@ function openDirectionMenu(anchor, note, editor, li) {
         };
         document.addEventListener('mousedown', close);
     }, 0);
+}
+
+async function commitEditor(editor, note, li) {
+    if (!editor) return;
+    if (note.id === '__trailing__') return; // never persist the fake note
+    const content = collectContent(editor);
+    if (content !== note.content) {
+        note.content = content;
+        await saveNoteContent(note.id, content);
+    }
 }
