@@ -32,6 +32,21 @@ function buildEditor(editor, note, li) {
             }, 120);
         });
     }
+
+        if (!editor.dataset.clickWired) {
+        editor.dataset.clickWired = '1';
+        editor.addEventListener('mousedown', (e) => {
+            if (e.target === editor) {
+                const parts = editor.querySelectorAll('.part');
+                const last = parts[parts.length - 1];
+                if (last) {
+                    e.preventDefault();
+                    last.focus();
+                    setCaretPosition(last, last.textContent.length);
+                }
+            }
+        });
+    }
 }
 
 function makePart(role, text, note) {

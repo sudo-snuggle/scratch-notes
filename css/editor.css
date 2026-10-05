@@ -1,14 +1,14 @@
 .note-editor {
     flex: 1;
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
+    min-width: 0;
     padding: 2px 4px;
     border-radius: 3px;
     cursor: text;
     min-height: 22px;
     font: inherit;
-    min-width: 0;
+    line-height: 22px;
+    white-space: pre-wrap;
+    word-break: break-word;
 }
 
 .note-editor:focus-within {
@@ -23,9 +23,8 @@
     font: inherit;
     padding: 0;
     color: inherit;
-    min-width: 1px;
     white-space: pre-wrap;
-    flex: 1 1 auto;
+    display: inline;
 }
 
 .part:empty::before {
