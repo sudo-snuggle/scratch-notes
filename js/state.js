@@ -1,0 +1,3 @@
+const appState = {
+    activePageId: null
+};

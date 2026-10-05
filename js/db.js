@@ -1,6 +1,6 @@
 const db = new Dexie('MyNotesDB');
-db.version(2).stores({
-    notes: 'id, parentId, order, updatedAt'
+db.version(3).stores({
+    notes: 'id, parentId, order, type, updatedAt'
 });
 
 async function getFlatNotes() {
@@ -24,4 +24,28 @@ async function getFlatNotes() {
     };
     walk(null, 0);
     return flat;
+}
+
+// Notes inside a specific page (outline of that page)
+async function getPageNotes(pageId) {
+    const all = await db.notes.toArray();
+    const inPage = all.filter(n => {
+        // A note belongs to a page if walking up parents reaches the page id
+        let cur = n;
+        while (cur && cur.parentId) {
+            if (cur.parentId === pageId) return true;
+            cur = all.find(x => x.id === cur.parentId);
+            if (!cur) return false;
+        }
+        return false;
+    });
+    // Include the direct children of the page
+    const directChildren = all.filter(n => n.parentId === pageId);
+    const directIds = new Set(directChildren.map(n => n.id));
+    const result = all.filter(n =>
+        n.id === pageId ||
+        directIds.has(n.id) ||
+        inPage.some(x => x.id === n.id)
+    );
+    return result;
 }
