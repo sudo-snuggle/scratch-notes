@@ -70,3 +70,25 @@ kbd {
     font-size: 11px;
     font-family: monospace;
 }
+
+.line.dragging { opacity: 0.4; }
+
+.line.drop-before::before,
+.line.drop-after::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: #3b82f6;
+    pointer-events: none;
+}
+.line.drop-before::before { top: 0; }
+.line.drop-after::after { bottom: 0; }
+
+.line.drop-into > input {
+    background: #dbeafe;
+    box-shadow: 0 0 0 1px #3b82f6;
+}
+
+.line { position: relative; }
