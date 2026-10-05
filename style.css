@@ -1,0 +1,4 @@
+body { font-family: system-ui, sans-serif; max-width: 700px; margin: 40px auto; padding: 0 20px; }
+#addNoteBtn { padding: 8px 16px; cursor: pointer; margin-bottom: 20px; }
+ul { list-style: none; padding: 0; }
+li { padding: 10px; border: 1px solid #ddd; margin-bottom: 8px; border-radius: 4px; display: flex; justify-content: space-between; }
