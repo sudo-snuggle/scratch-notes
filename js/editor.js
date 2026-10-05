@@ -20,18 +20,17 @@ function buildEditor(editor, note, li) {
         );
     }
 
-    // Attach a single set of listeners to the editor itself, not the spans.
     if (!editor.dataset.wired) {
         editor.dataset.wired = '1';
         editor.addEventListener('keydown', (e) => onEditorKeydown(e, editor, note, li));
         editor.addEventListener('input', () => onEditorInput(editor, note, li));
+        editor.addEventListener('focusin', () => li.classList.remove('empty'));
         editor.addEventListener('blur', () => {
             setTimeout(async () => {
                 if (document.activeElement?.closest('.note-editor') === editor) return;
                 await commitEditor(editor, note, li);
             }, 120);
         });
-        editor.addEventListener('focusin', () => li.classList.remove('empty'));
     }
 }
 
@@ -62,62 +61,44 @@ function makeArrow(note, editor, li) {
 }
 
 function onEditorInput(editor, note, li) {
-    const full = editor.querySelector('[data-role="full"]');
-    const front = editor.querySelector('[data-role="front"]');
-    const back = editor.querySelector('[data-role="back"]');
-    const arrow = editor.querySelector('[data-role="arrow"]');
+    // Trailing fake note: don't auto-convert via DB. Just visual.
+    const isTrailing = note.id === '__trailing__';
 
-    // Plain text mode: check if user typed ==
-    if (full) {
+    const full = editor.querySelector('[data-role="full"]');
+
+    // Detect == typed in plain mode, convert in place WITHOUT losing caret
+    if (full && full.textContent.includes('==')) {
         const text = full.textContent;
         const idx = text.indexOf('==');
-        if (idx !== -1) {
-            // Convert in place. Split text at ==
-            const frontText = text.slice(0, idx).replace(/\s+$/, '');
-            const backText = text.slice(idx + 2);
-            const caretWasAfter = getCaretPosition(full) > idx + 2;
+        const frontText = text.slice(0, idx).replace(/\s+$/, '');
+        const backText = text.slice(idx + 2).replace(/^\s+/, '');
+        const caretPos = getCaretPosition(full);
+        const wasAfterArrow = caretPos > idx + 2;
 
-            full.remove();
-            const newFront = makePart('front', frontText, note);
-            const newArrow = makeArrow(note, editor, li);
-            const newBack = makePart('back', backText, note);
-            editor.append(newFront, newArrow, newBack);
+        full.remove();
+        const frontSpan = makePart('front', frontText, note);
+        const arrow = makeArrow(note, editor, li);
+        const backSpan = makePart('back', backText, note);
+        editor.append(frontSpan, arrow, backSpan);
 
-            if (caretWasAfter) {
-                newBack.focus();
-                setCaretPosition(newBack, (getCaretPosition(full) || 0) - idx - 2);
-            } else {
-                newFront.focus();
-                setCaretPosition(newFront, frontText.length);
-            }
-            li.classList.remove('empty');
-            note.content = `${frontText} == ${backText}`;
-            return;
+        // Restore caret
+        if (wasAfterArrow) {
+            backSpan.focus();
+            setCaretPosition(backSpan, Math.max(0, caretPos - idx - 2));
+        } else {
+            frontSpan.focus();
+            setCaretPosition(frontSpan, Math.min(caretPos, frontText.length));
         }
+
+        note.content = `${frontText} == ${backText}`;
+        li.classList.remove('empty');
+        return;
     }
 
-    // Flashcard mode: check if user deleted the ==
-    if (front && back && !editor.querySelector('[data-role="full"]')) {
-        const combined = front.textContent;
-        if (combined.includes('==')) {
-            // User typed == inside front — split it
-            const idx = combined.indexOf('==');
-            const frontText = combined.slice(0, idx).replace(/\s+$/, '');
-            const backText = combined.slice(idx + 2);
-            front.textContent = frontText;
-            back.textContent = backText + back.textContent;
-            front.focus();
-            setCaretPosition(front, frontText.length);
-            return;
-        }
-    }
-
-    // Live placeholder toggling for empty line class
+    // Update in-memory note
+    note.content = collectContent(editor);
     const total = Array.from(editor.querySelectorAll('.part')).map(p => p.textContent).join('');
     li.classList.toggle('empty', total.trim() === '');
-
-    // Update in-memory note content
-    note.content = collectContent(editor);
 }
 
 function collectContent(editor) {
@@ -132,7 +113,6 @@ function collectContent(editor) {
 function onEditorKeydown(e, editor, note, li) {
     const isTrailing = note.id === '__trailing__';
 
-    // Backspace handling (works for both real and trailing)
     if (e.key === 'Backspace') {
         const front = editor.querySelector('[data-role="front"]');
         const back = editor.querySelector('[data-role="back"]');
@@ -166,31 +146,38 @@ function onEditorKeydown(e, editor, note, li) {
             promoteTrailing(editor);
             return;
         }
-        commitEditor(editor, note, li).then(async () => {
-            const fresh = await db.notes.get(note.id);
-            if (!fresh) return;
-            const newNote = await createNote({
-                content: '',
-                parentId: fresh.parentId || null,
-                afterId: note.id
-            });
-            await render();
-            noteEls.get(newNote.id)?.querySelector('.part')?.focus();
-        });
+        handleEnter(note);
         return;
     }
 
     if (e.key === 'Tab') {
         e.preventDefault();
-        if (isTrailing) return; // can't indent the trailing line
-        commitEditor(editor, note, li).then(async () => {
-            if (e.shiftKey) await outdent(note.id);
-            else await indent(note.id);
-            await render();
-            noteEls.get(note.id)?.querySelector('.part')?.focus();
-        });
+        if (isTrailing) return;
+        handleTab(note, e.shiftKey);
         return;
     }
+}
+
+async function handleEnter(note) {
+    await saveNoteContent(note.id, note.content || '');
+    const fresh = await db.notes.get(note.id);
+    if (!fresh) return;
+    const newNote = await createNote({
+        content: '',
+        parentId: fresh.parentId || null,
+        afterId: note.id
+    });
+    window.focusAfterRender = { id: newNote.id, caret: 0 };
+    await render();
+}
+
+async function handleTab(note, isShift) {
+    await saveNoteContent(note.id, note.content || '');
+    if (isShift) await outdent(note.id);
+    else await indent(note.id);
+    const fresh = await db.notes.get(note.id);
+    window.focusAfterRender = { id: note.id, caret: (fresh?.content || '').length };
+    await render();
 }
 
 async function promoteTrailing(editor) {
@@ -198,12 +185,14 @@ async function promoteTrailing(editor) {
     if (!content) return;
     const all = await getFlatNotes();
     const lastId = all.length ? all[all.length - 1].id : null;
-    await createNote({ content, parentId: null, afterId: lastId });
+    const newNote = await createNote({ content, parentId: null, afterId: lastId });
+    window.focusAfterRender = { id: newNote.id, caret: content.length };
     await render();
 }
 
 async function commitEditor(editor, note, li) {
     if (!editor) return;
+    if (note.id === '__trailing__') return;
     const content = collectContent(editor);
     if (content !== note.content) {
         note.content = content;
@@ -289,14 +278,4 @@ function openDirectionMenu(anchor, note, editor, li) {
         };
         document.addEventListener('mousedown', close);
     }, 0);
-}
-
-async function commitEditor(editor, note, li) {
-    if (!editor) return;
-    if (note.id === '__trailing__') return; // never persist the fake note
-    const content = collectContent(editor);
-    if (content !== note.content) {
-        note.content = content;
-        await saveNoteContent(note.id, content);
-    }
 }
